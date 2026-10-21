@@ -1,281 +1,252 @@
-const playlistSongs = document.getElementById("playlist-songs");
-const playButton = document.getElementById("play");
-const pauseButton = document.getElementById("pause");
-const nextButton = document.getElementById("next");
-const previousButton = document.getElementById("previous");
-const shuffleButton = document.getElementById("shuffle");
-
-const allSongs = [
+import { createDemoAudio } from "./demo-audio.js";
+import { nextIndex, formatTime } from "./logic.js";
+const $ = (id) => document.getElementById(id),
+  audio = $("audio");
+const demos = [
   {
-    id: 0,
-    title: "Scratching The Surface",
-    artist: "Quincy Larson",
-    duration: "4:25",
-    src: "https://s3.amazonaws.com/org.freecodecamp.mp3-player-project/scratching-the-surface.mp3",
+    id: "blue",
+    title: "Blue hour",
+    artist: "Afterhours · ambient study",
+    src: "",
+    notes: [130.81, 164.81, 196, 261.63],
   },
   {
-    id: 1,
-    title: "Can't Stay Down",
-    artist: "Quincy Larson",
-    duration: "4:15",
-    src: "https://s3.amazonaws.com/org.freecodecamp.mp3-player-project/cant-stay-down.mp3",
+    id: "warm",
+    title: "Warm current",
+    artist: "Afterhours · ambient study",
+    src: "",
+    notes: [146.83, 185, 220, 293.66],
   },
   {
-    id: 2,
-    title: "Still Learning",
-    artist: "Quincy Larson",
-    duration: "3:51",
-    src: "https://s3.amazonaws.com/org.freecodecamp.mp3-player-project/still-learning.mp3",
-  },
-  {
-    id: 3,
-    title: "Cruising for a Musing",
-    artist: "Quincy Larson",
-    duration: "3:34",
-    src: "https://s3.amazonaws.com/org.freecodecamp.mp3-player-project/cruising-for-a-musing.mp3",
-  },
-  {
-    id: 4,
-    title: "Never Not Favored",
-    artist: "Quincy Larson",
-    duration: "3:35",
-    src: "https://s3.amazonaws.com/org.freecodecamp.mp3-player-project/never-not-favored.mp3",
-  },
-  {
-    id: 5,
-    title: "From the Ground Up",
-    artist: "Quincy Larson",
-    duration: "3:12",
-    src: "https://s3.amazonaws.com/org.freecodecamp.mp3-player-project/from-the-ground-up.mp3",
-  },
-  {
-    id: 6,
-    title: "Walking on Air",
-    artist: "Quincy Larson",
-    duration: "3:25",
-    src: "https://s3.amazonaws.com/org.freecodecamp.mp3-player-project/walking-on-air.mp3",
-  },
-  {
-    id: 7,
-    title: "Can't Stop Me. Can't Even Slow Me Down.",
-    artist: "Quincy Larson",
-    duration: "3:52",
-    src: "https://s3.amazonaws.com/org.freecodecamp.mp3-player-project/cant-stop-me-cant-even-slow-me-down.mp3",
-  },
-  {
-    id: 8,
-    title: "The Surest Way Out is Through",
-    artist: "Quincy Larson",
-    duration: "3:10",
-    src: "https://s3.amazonaws.com/org.freecodecamp.mp3-player-project/the-surest-way-out-is-through.mp3",
-  },
-  {
-    id: 9,
-    title: "Chasing That Feeling",
-    artist: "Quincy Larson",
-    duration: "2:43",
-    src: "https://s3.amazonaws.com/org.freecodecamp.mp3-player-project/chasing-that-feeling.mp3",
+    id: "drift",
+    title: "Slow drift",
+    artist: "Afterhours · ambient study",
+    src: "",
+    notes: [110, 138.59, 164.81, 220],
   },
 ];
-
-const audio = new Audio();
-let userData = {
-  songs: [...allSongs],
-  currentSong: null,
-  songCurrentTime: 0,
-};
-
-const playSong = (id) => {
-  const song = userData?.songs.find((song) => song.id === id);
-  audio.src = song.src;
-  audio.title = song.title;
-
-  if (userData?.currentSong === null || userData?.currentSong.id !== song.id) {
-    audio.currentTime = 0;
-  } else {
-    audio.currentTime = userData?.songCurrentTime;
+let tracks = [...demos],
+  current = "blue",
+  shuffle = false,
+  repeat = "off",
+  playRequest = 0;
+audio.volume = 0.7;
+function active() {
+  return tracks.find((t) => t.id === current);
+}
+function render() {
+  $("track-count").textContent =
+    `${tracks.length} TRACK${tracks.length === 1 ? "" : "S"}`;
+  const term = $("search").value.toLowerCase();
+  const filtered = tracks.filter((t) =>
+    (t.title + " " + t.artist).toLowerCase().includes(term),
+  );
+  $("playlist").replaceChildren(
+    ...filtered.map((t) => {
+      const li = document.createElement("li");
+      li.className = "track";
+      li.setAttribute("aria-current", t.id === current);
+      const b = document.createElement("button");
+      b.className = "track-select";
+      const num = document.createElement("span");
+      num.className = "track-num";
+      num.textContent = String(tracks.indexOf(t) + 1).padStart(2, "0");
+      const desc = document.createElement("span"),
+        title = document.createElement("strong"),
+        artist = document.createElement("small");
+      title.textContent = t.title;
+      artist.textContent = t.artist;
+      desc.append(title, artist);
+      b.append(num, desc);
+      b.onclick = () => select(t.id, true);
+      const remove = document.createElement("button");
+      remove.className = "remove";
+      remove.textContent = "×";
+      remove.setAttribute("aria-label", "Remove " + t.title);
+      remove.onclick = () => removeTrack(t.id);
+      li.append(b, remove);
+      return li;
+    }),
+  );
+  if (!filtered.length)
+    $("playlist").innerHTML =
+      '<li class="empty">No tracks here. Add audio or restore the demos.</li>';
+  ["play", "prev", "next", "shuffle", "repeat"].forEach(
+    (id) => ($(id).disabled = !tracks.length),
+  );
+}
+function playbackUI() {
+  const playing = !audio.paused;
+  $("play").textContent = playing ? "Ⅱ" : "▶";
+  $("play").setAttribute("aria-label", playing ? "Pause" : "Play");
+  $("play-state").textContent = playing ? "PLAYING" : "PAUSED";
+  $("artwork").classList.toggle("playing", playing);
+}
+async function play() {
+  const id = ++playRequest;
+  try {
+    await audio.play();
+    if (id === playRequest)
+      $("status").textContent = "Now playing " + active()?.title;
+  } catch (e) {
+    if (id === playRequest && e.name !== "AbortError")
+      $("status").textContent =
+        "This track could not play. Try again or add another audio file.";
   }
-  userData.currentSong = song;
-  playButton.classList.add("playing");
-
-  highlightCurrentSong();
-  setPlayerDisplay();
-  setPlayButtonAccessibleText();
-  audio.play();
-};
-
-const pauseSong = () => {
-  userData.songCurrentTime = audio.currentTime;
-
-  playButton.classList.remove("playing");
+  playbackUI();
+}
+function select(id, start = false) {
+  const t = tracks.find((t) => t.id === id);
+  if (!t) return;
+  ++playRequest;
   audio.pause();
-};
-
-const playNextSong = () => {
-  if (userData?.currentSong === null) {
-    playSong(userData?.songs[0].id);
-  } else {
-    const currentSongIndex = getCurrentSongIndex();
-    const nextSong = userData?.songs[currentSongIndex + 1];
-
-    playSong(nextSong.id);
+  current = id;
+  if (t.notes && !t.src) t.src = createDemoAudio(t.notes);
+  audio.src = t.src;
+  $("title").textContent = t.title;
+  $("artist").textContent = t.artist;
+  $("art-number").textContent = String(tracks.indexOf(t) + 1).padStart(2, "0");
+  $("seek").value = 0;
+  $("elapsed").textContent = "0:00";
+  $("duration").textContent = "0:00";
+  $("seek").disabled = true;
+  $("status").textContent = "Ready to play " + t.title;
+  render();
+  playbackUI();
+  if (start) play();
+}
+function move(direction, auto = false) {
+  if (!tracks.length) return;
+  const i = tracks.findIndex((t) => t.id === current),
+    next = nextIndex(i, tracks.length, { direction, shuffle, repeat });
+  if (next === null) {
+    audio.pause();
+    audio.currentTime = 0;
+    playbackUI();
+    $("status").textContent = "End of the listening queue.";
+    return;
   }
-};
-
-const playPreviousSong = () => {
-  if (userData?.currentSong === null) return;
+  select(tracks[next].id, auto || !audio.paused);
+}
+function removeTrack(id) {
+  const index = tracks.findIndex((t) => t.id === id),
+    t = tracks[index];
+  if (!t) return;
+  const wasPlaying = !audio.paused;
+  if (id === current) {
+    ++playRequest;
+    audio.pause();
+    audio.removeAttribute("src");
+    audio.load();
+  }
+  tracks = tracks.filter((t) => t.id !== id);
+  if (t.local) URL.revokeObjectURL(t.src);
+  if (id === current && tracks.length)
+    select(tracks[Math.min(index, tracks.length - 1)].id, wasPlaying);
+  else if (!tracks.length) {
+    current = null;
+    $("title").textContent = "Your next discovery";
+    $("artist").textContent = "Add audio to begin";
+    $("duration").textContent = $("elapsed").textContent = "0:00";
+    $("seek").value = 0;
+    $("seek").disabled = true;
+    playbackUI();
+  }
+  render();
+}
+$("play").onclick = () => {
+  if (!tracks.length) return;
+  if (audio.paused) play();
   else {
-    const currentSongIndex = getCurrentSongIndex();
-    const previousSong = userData?.songs[currentSongIndex - 1];
-
-    playSong(previousSong.id);
+    ++playRequest;
+    audio.pause();
   }
 };
-
-const shuffle = () => {
-  userData?.songs.sort(() => Math.random() - 0.5);
-  userData.currentSong = null;
-  userData.songCurrentTime = 0;
-
-  renderSongs(userData?.songs);
-  pauseSong();
-  setPlayerDisplay();
-  setPlayButtonAccessibleText();
+$("next").onclick = () => move(1);
+$("prev").onclick = () => {
+  if (audio.currentTime > 3) audio.currentTime = 0;
+  else move(-1);
 };
-
-const deleteSong = (id) => {
-  if (userData?.currentSong?.id === id) {
-    userData.currentSong = null;
-    userData.songCurrentTime = 0;
-
-    pauseSong();
-    setPlayerDisplay();
-  }
-
-  userData.songs = userData?.songs.filter((song) => song.id !== id);
-  renderSongs(userData?.songs);
-  highlightCurrentSong();
-  setPlayButtonAccessibleText();
-
-  if (userData?.songs.length === 0) {
-    const resetButton = document.createElement("button");
-    const resetText = document.createTextNode("Reset Playlist");
-
-    resetButton.id = "reset";
-    resetButton.ariaLabel = "Reset playlist";
-    resetButton.appendChild(resetText);
-    playlistSongs.appendChild(resetButton);
-
-    resetButton.addEventListener("click", () => {
-      userData.songs = [...allSongs];
-
-      renderSongs(sortSongs());
-      setPlayButtonAccessibleText();
-      resetButton.remove();
-    });
-  }
+$("shuffle").onclick = () => {
+  shuffle = !shuffle;
+  $("shuffle").setAttribute("aria-pressed", shuffle);
 };
-
-const setPlayerDisplay = () => {
-  const playingSong = document.getElementById("player-song-title");
-  const songArtist = document.getElementById("player-song-artist");
-  const currentTitle = userData?.currentSong?.title;
-  const currentArtist = userData?.currentSong?.artist;
-
-  playingSong.textContent = currentTitle ? currentTitle : "";
-  songArtist.textContent = currentArtist ? currentArtist : "";
+$("repeat").onclick = () => {
+  repeat = { off: "all", all: "one", one: "off" }[repeat];
+  $("repeat").textContent = repeat === "one" ? "↻¹" : "↻";
+  $("repeat").setAttribute("aria-label", "Repeat mode " + repeat);
+  $("repeat").setAttribute("aria-pressed", repeat !== "off");
 };
-
-const highlightCurrentSong = () => {
-  const playlistSongElements = document.querySelectorAll(".playlist-song");
-  const songToHighlight = document.getElementById(
-    `song-${userData?.currentSong?.id}`
-  );
-
-  playlistSongElements.forEach((songEl) => {
-    songEl.removeAttribute("aria-current");
-  });
-
-  if (songToHighlight) songToHighlight.setAttribute("aria-current", "true");
+$("volume").oninput = () => {
+  audio.volume = Number($("volume").value);
+  $("volume-value").textContent = Math.round(audio.volume * 100) + "%";
 };
-
-const renderSongs = (array) => {
-  const songsHTML = array
-    .map((song) => {
-      return `
-      <li id="song-${song.id}" class="playlist-song">
-      <button class="playlist-song-info" onclick="playSong(${song.id})">
-          <span class="playlist-song-title">${song.title}</span>
-          <span class="playlist-song-artist">${song.artist}</span>
-          <span class="playlist-song-duration">${song.duration}</span>
-      </button>
-      <button onclick="deleteSong(${song.id})" class="playlist-song-delete" aria-label="Delete ${song.title}">
-          <svg width="20" height="20" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="8" cy="8" r="8" fill="#4d4d62"/>
-          <path fill-rule="evenodd" clip-rule="evenodd" d="M5.32587 5.18571C5.7107 4.90301 6.28333 4.94814 6.60485 5.28651L8 6.75478L9.39515 5.28651C9.71667 4.94814 10.2893 4.90301 10.6741 5.18571C11.059 5.4684 11.1103 5.97188 10.7888 6.31026L9.1832 7.99999L10.7888 9.68974C11.1103 10.0281 11.059 10.5316 10.6741 10.8143C10.2893 11.097 9.71667 11.0519 9.39515 10.7135L8 9.24521L6.60485 10.7135C6.28333 11.0519 5.7107 11.097 5.32587 10.8143C4.94102 10.5316 4.88969 10.0281 5.21121 9.68974L6.8168 7.99999L5.21122 6.31026C4.8897 5.97188 4.94102 5.4684 5.32587 5.18571Z" fill="white"/></svg>
-        </button>
-      </li>
-      `;
-    })
-    .join("");
-
-  playlistSongs.innerHTML = songsHTML;
+$("seek").oninput = () => {
+  if (Number.isFinite(audio.duration) && audio.duration > 0)
+    audio.currentTime = (audio.duration * Number($("seek").value)) / 100;
 };
-
-const setPlayButtonAccessibleText = () => {
-  const song = userData?.currentSong || userData?.songs[0];
-
-  playButton.setAttribute(
-    "aria-label",
-    song?.title ? `Play ${song.title}` : "Play"
-  );
+audio.onloadedmetadata = () => {
+  $("duration").textContent = formatTime(audio.duration);
+  $("seek").disabled = !Number.isFinite(audio.duration) || audio.duration <= 0;
 };
-
-const getCurrentSongIndex = () =>
-  userData?.songs.indexOf(userData?.currentSong);
-
-playButton.addEventListener("click", () => {
-  if (userData?.currentSong === null) {
-    playSong(userData?.songs[0].id);
-  } else {
-    playSong(userData?.currentSong.id);
-  }
-});
-
-pauseButton.addEventListener("click", pauseSong);
-
-nextButton.addEventListener("click", playNextSong);
-
-previousButton.addEventListener("click", playPreviousSong);
-
-shuffleButton.addEventListener("click", shuffle);
-
-audio.addEventListener("ended", () => {
-  const currentSongIndex = getCurrentSongIndex();
-  const nextSongExists = userData?.songs[currentSongIndex + 1] !== undefined;
-
-  if (nextSongExists) {
-    playNextSong();
-  } else {
-    userData.currentSong = null;
-    userData.songCurrentTime = 0;
-  }
-});
-
-const sortSongs = () => {
-  userData?.songs.sort((a, b) => {
-    if (a.title < b.title) {
-      return -1;
+audio.ontimeupdate = () => {
+  $("elapsed").textContent = formatTime(audio.currentTime);
+  $("seek").value =
+    Number.isFinite(audio.duration) && audio.duration > 0
+      ? (audio.currentTime / audio.duration) * 100
+      : 0;
+};
+audio.onplay = audio.onpause = playbackUI;
+audio.onended = () => {
+  if (repeat === "one") {
+    audio.currentTime = 0;
+    play();
+  } else move(1, true);
+};
+audio.onerror = () => {
+  $("status").textContent =
+    "Audio unavailable or unsupported. Choose another track or add a local file.";
+  playbackUI();
+};
+$("search").oninput = render;
+$("files").onchange = () => {
+  let added = 0;
+  for (const file of $("files").files) {
+    if (
+      !file.type.startsWith("audio/") &&
+      !/\.(mp3|wav|ogg|m4a|flac|aac)$/i.test(file.name)
+    )
+      continue;
+    if (file.size > 100 * 1024 * 1024) {
+      $("status").textContent = "Files must be smaller than 100 MB.";
+      continue;
     }
-
-    if (a.title > b.title) {
-      return 1;
-    }
-
-    return 0;
-  });
-
-  return userData?.songs;
+    const t = {
+      id: crypto.randomUUID(),
+      title: file.name.replace(/\.[^.]+$/, ""),
+      artist: "Your local audio",
+      src: URL.createObjectURL(file),
+      local: true,
+    };
+    tracks.push(t);
+    added++;
+    if (!current) select(t.id);
+  }
+  $("files").value = "";
+  render();
+  if (added)
+    $("status").textContent =
+      `Added ${added} local track${added === 1 ? "" : "s"}. Files stay on this device.`;
 };
-
-renderSongs(sortSongs());
-setPlayButtonAccessibleText();
+$("restore").onclick = () => {
+  for (const d of demos) if (!tracks.some((t) => t.id === d.id)) tracks.push(d);
+  if (!current) select(tracks[0].id);
+  render();
+  $("status").textContent = "Demo tracks restored.";
+};
+window.addEventListener("beforeunload", () =>
+  [...new Set([...tracks, ...demos].map((t) => t.src))]
+    .filter((s) => s.startsWith("blob:"))
+    .forEach((s) => URL.revokeObjectURL(s)),
+);
+select(current);
